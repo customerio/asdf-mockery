@@ -13,35 +13,64 @@ test -n "$ASDF_INSTALL_PATH" || {
 	exit 1
 }
 
+_get_platform() {
+	uname
+}
+
 _get_arch() {
-	uname | tr '[:upper:]' '[:lower:]'
+	uname -a | awk '{print $NF}'
+}
+
+_get_checksum_url() {
+	local -r version="$1"
+
+	echo "https://github.com/vektra/mockery/releases/download/v${version}/checksum.txt"
 }
 
 _get_download_url() {
 	local -r version="$1"
 	local -r platform="$2"
 
-	echo "https://github.com/vektra/mockery/releases/download/v${version}/mockery_${version}_${platform}_x86_64.tar.gz"
+	echo "https://github.com/vektra/mockery/releases/download/v${version}/mockery_${version}_${platform}_${arch}.tar.gz"
 }
 
 install() {
 	local -r install_type=$1
 	local -r version=$2
 	local -r install_path=$3
-	local -r tar_install_path="$install_path/mockery-v$version.tgz"
+	local -r platform="$(_get_platform)"
+	local -r arch="$(_get_arch)"
+
+	local -r checksum_install_path="$install_path/checksum.txt"
 	local -r bin_install_path="$install_path/bin"
-	local -r tmp_install_path="mockery-v$version"
-	local -r platform="$(_get_arch)"
+	local -r tmp_install_path="mockery-$version"
+	local -r archive_name="mockery_${version}_${platform}_${arch}.tar.gz"
+	local -r tar_install_path="$install_path/$archive_name"
+	local -r checksum_url="$(_get_checksum_url "$version")"
 	local -r download_url="$(_get_download_url "$version" "$platform")"
 	local -r bin_path="$bin_install_path/mockery"
 
 	mkdir -p "$bin_install_path"
+	echo "Downloading checksums from $checksum_url"
+	curl -Ls "$checksum_url" -o - | grep "$archive_name" > "$checksum_install_path"
 	echo "Downloading mockery from $download_url"
 	curl -Ls "$download_url" -o "$tar_install_path"
+
+	echo "Validating checksum for $archive_name"
+	pushd "$install_path" >/dev/null 2>&1 && \
+		shasum -c "$checksum_install_path" && \
+	popd >/dev/null 2>&1 || exit 1
+
 	mkdir "$tmp_install_path"
 	tar -xzf "$tar_install_path" -C "$tmp_install_path"
+
+	echo "Copying binary..."
 	cp "$tmp_install_path/mockery" "$bin_path"
+
+	echo "Cleaning up..."
 	rm -rf "$tmp_install_path"
+
+	echo "Changing file mode..."
 	chmod +x "$bin_path"
 }
 
